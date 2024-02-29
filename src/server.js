@@ -4,9 +4,11 @@ import { renderToString } from "react-dom/server";
 import React, { Component } from "react";
 import { StaticRouter } from "react-router-dom/server";
 import routes from "./routes";
+// import { routes, asyncComp, asyncLoad } from "./routes";
 import PropTypes from 'prop-types';
 import Layout from "./Layout";
 import RouteIndex from "./index";
+import { matchPath } from 'react-router-dom';
 
 const app = express();
 
@@ -41,25 +43,53 @@ function extractParams(url, path) {
 }
 
 app.get('/*', async (req, res) => {
-    console.log("coming");
-    try {
-        for (const route of routes) {
-            const { path } = route;
-            const params = extractParams(req.url, path);
-            console.log(route, route.element().fetchData, "route>>>>>>>>>>>>")
-            if (Object.keys(params).length > 0) {
-                if (route.fetchData) {
-                    route.fetchData(req, function (data) {
-                        console.log(data, "data-chunk")
-                        renderHtml(data, req.url, req, res);
+    console.log(routes, "routes");
+    routes.filter(route => {
+        if (matchPath({ path: route.path }, req.path)) {
+            route.params = matchPath({ path: route.path }, req.path).params
+            return matchPath({ path: route.path }, req.path);
+        }
+    }).map(route => {
+        let component = route.element;
+        let data = {
+            params: route.params,
+            location: {
+                pathname: req.path,
+                query: req.query
+            }
+        };
+        if (component) {
+            component().then((c) => {
+                console.log(c, "Ccc");
+                if (c.default.fetchData !== undefined) {
+                    c.default.fetchData(data, function (respData) {
+                        renderHtml(respData, req.url, req, res);
                     })
                 }
-            }
+            });
         }
-    } catch (error) {
-        console.error('Error rendering component:', error);
-        res.status(500).send('Internal Server Error');
-    }
+        console.log(component, "compo");
+    });
+
+
+    // try {
+    //     for (const route of routes) {
+    //         const { path } = route;
+    //         const params = extractParams(req.url, path);
+    //         console.log(route, route.fetchData, "route>>>>>>>>>>>>")
+    //         if (Object.keys(params).length > 0) {
+    //             if (route.fetchData) {
+    //                 route.fetchData(req, function (data) {
+    //                     console.log(data, "data-chunk")
+    //                     renderHtml(data, req.url, req, res);
+    //                 })
+    //             }
+    //         }
+    //     }
+    // } catch (error) {
+    //     console.error('Error rendering component:', error);
+    //     res.status(500).send('Internal Server Error');
+    // }
 });
 
 
@@ -83,7 +113,7 @@ let renderHtml = function (data, location, req, res) {
     res.write(html);
     var renderedFoot = '<script>window.__INITIAL_STATE__ = ' + JSON.stringify(data) + '; </script>';
     renderedFoot += '<script src="/js/bundle.js"></script>';
-    renderedFoot += '<script src="/js/'+chunkJs+'.chunk.js">';
+    renderedFoot += '<script src="/js/' + chunkJs + '.chunk.js">';
     var htmlContent = renderedFoot + '</div></body></html>';
     res.end(htmlContent);
 };
